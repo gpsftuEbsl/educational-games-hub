@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小晶的數學填字試煉 v2.0</title>
+    <style>
+        /* CSS 風格：加入了一些緊張感的紅色元素 */
+        body {
+            background-color: #202124; /* 深色模式，保護你的資工系眼睛 */
+            color: #e8eaed;
+            font-family: 'Consolas', 'Segoe UI', monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        h1 { color: #8ab4f8; margin-bottom: 10px; }
+
+        /* 抬頭顯示器 (HUD) */
+        .hud {
+            display: flex;
+            justify-content: space-between;
+            width: 340px;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .timer-box { color: #f28b82; } /* 紅色倒數 */
+        .level-box { color: #fdd663; }
+
+        .game-board {
+            display: grid;
+            grid-template-columns: repeat(5, 60px); 
+            grid-template-rows: repeat(5, 60px);
+            gap: 5px;
+            background-color: #303134;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            border: 1px solid #5f6368;
+        }
+
+        .cell {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            border-radius: 5px;
+            user-select: none;
+        }
+
+        .static {
+            background-color: #3c4043;
+            border: 2px solid #5f6368;
+            color: #bdc1c6;
+        }
+
+        input.cell-input {
+            width: 50px;
+            height: 50px;
+            text-align: center;
+            font-size: 1.5rem;
+            border: 2px solid #5f6368;
+            border-radius: 5px;
+            outline: none;
+            background-color: #e8eaed;
+            color: #202124;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+
+        input.cell-input:focus {
+            border-color: #8ab4f8;
+            box-shadow: 0 0 8px rgba(138, 180, 248, 0.4);
+        }
+
+        .empty { background: transparent; }
+
+        .controls { margin-top: 20px; display: flex; gap: 10px; }
+
+        button {
+            padding: 10px 25px;
+            font-size: 1rem;
+            cursor: pointer;
+            background-color: #8ab4f8;
+            color: #202124;
+            border: none;
+            border-radius: 5px;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+        button:hover { background-color: #aecbfa; }
+        button:disabled { background-color: #5f6368; cursor: not-allowed; }
+
+        /* 狀態回饋 */
+        .correct { background-color: #81c995 !important; border-color: #1e8e3e !important; color: #0d652d !important; }
+        .wrong { background-color: #f28b82 !important; border-color: #d93025 !important; color: #a50e0e !important; }
+
+        .status { margin-top: 15px; height: 24px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h1>∞ 數學填字試煉 v2.0</h1>
+
+    <div class="hud">
+        <div class="level-box" id="level-display">Level: 1</div>
+        <div class="timer-box" id="timer-display">Time: 60s</div>
+    </div>
+
+    <div class="game-board" id="board">
+        </div>
+
+    <div class="status" id="status-msg"></div>
+
+    <div class="controls">
+        <button id="check-btn" onclick="checkAnswers()">檢查答案</button>
+        <button id="next-btn" onclick="nextLevel()" style="display:none; background-color: #81c995;">下一關</button>
+        <button id="retry-btn" onclick="restartLevel()" style="display:none; background-color: #f28b82;">重試</button>
+    </div>
+
+    <script>
+        // --- 關卡資料庫 (可無限擴充) ---
+        const levels = [
+            // Level 1: 基礎加減
+            {
+                timeLimit: 45, // 秒
+                grid: [
+                    { t: 's', v: '5' }, { t: 's', v: '+' }, { t: 'i', v: '7' }, { t: 's', v: '=' }, { t: 's', v: '12' },
+                    { t: 's', v: '+' }, { t: 'e', v: '' },  { t: 's', v: '-' }, { t: 'e', v: '' },  { t: 'e', v: '' },
+                    { t: 's', v: '3' }, { t: 's', v: '+' }, { t: 's', v: '2' }, { t: 's', v: '=' }, { t: 'i', v: '5' },
+                    { t: 's', v: '=' }, { t: 'e', v: '' },  { t: 's', v: '=' }, { t: 'e', v: '' },  { t: 'e', v: '' },
+                    { t: 'i', v: '8' }, { t: 'e', v: '' },  { t: 'i', v: '5' }, { t: 'e', v: '' },  { t: 'e', v: '' },
+                ]
+            },
+            // Level 2: 加入乘法 (Multiplication)
+            // 橫: 2 * 3 = 6, 4 + 5 = 9
+            // 直: 2 * 4 = 8, 3 + 5 = 8, 6 + 9 = 15
+            {
+                timeLimit: 40,
+                grid: [
+                    { t: 's', v: '2' }, { t: 's', v: 'x' }, { t: 'i', v: '3' }, { t: 's', v: '=' }, { t: 'i', v: '6' },
+                    { t: 's', v: 'x' }, { t: 'e', v: '' },  { t: 's', v: '+' }, { t: 'e', v: '' },  { t: 's', v: '+' },
+                    { t: 'i', v: '4' }, { t: 's', v: '+' }, { t: 's', v: '5' }, { t: 's', v: '=' }, { t: 'i', v: '9' },
+                    { t: 's', v: '=' }, { t: 'e', v: '' },  { t: 's', v: '=' }, { t: 'e', v: '' },  { t: 's', v: '=' },
+                    { t: 'i', v: '8' }, { t: 'e', v: '' },  { t: 'i', v: '8' }, { t: 'e', v: '' },  { t: 's', v: '15' },
+                ]
+            },
+            // Level 3: 混合除法 (Division) - 挑戰題
+            // 橫: 8 / 2 = 4, 4 + 3 = 7
+            // 直: 8 + 4 = 12, 2 x 3 = 6, 4 + 7 = 11
+            {
+                timeLimit: 30, // 時間更短
+                grid: [
+                    { t: 'i', v: '8' }, { t: 's', v: '÷' }, { t: 's', v: '2' }, { t: 's', v: '=' }, { t: 'i', v: '4' },
+                    { t: 's', v: '+' }, { t: 'e', v: '' },  { t: 's', v: 'x' }, { t: 'e', v: '' },  { t: 's', v: '+' },
+                    { t: 's', v: '4' }, { t: 's', v: '+' }, { t: 'i', v: '3' }, { t: 's', v: '=' }, { t: 's', v: '7' },
+                    { t: 's', v: '=' }, { t: 'e', v: '' },  { t: 's', v: '=' }, { t: 'e', v: '' },  { t: 's', v: '=' },
+                    { t: 's', v: '12' }, { t: 'e', v: '' },  { t: 'i', v: '6' }, { t: 'e', v: '' },  { t: 'i', v: '11' },
+                ]
+            }
+        ];
+
+        // --- 遊戲狀態 ---
+        let currentLevelIndex = 0;
+        let timeLeft = 0;
+        let timerInterval = null;
+        let isGameActive = false;
+        const inputs = [];
+
+        // DOM 元素
+        const boardEl = document.getElementById('board');
+        const levelDisplay = document.getElementById('level-display');
+        const timerDisplay = document.getElementById('timer-display');
+        const statusMsg = document.getElementById('status-msg');
+        const checkBtn = document.getElementById('check-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const retryBtn = document.getElementById('retry-btn');
+
+        // --- 初始化關卡 ---
+        function loadLevel(index) {
+            // 重置狀態
+            clearInterval(timerInterval);
+            currentLevelIndex = index;
+            const levelData = levels[index];
+            timeLeft = levelData.timeLimit;
+            isGameActive = true;
+            inputs.length = 0;
+            boardEl.innerHTML = '';
+            
+            // 更新 UI
+            levelDisplay.innerText = `Level: ${index + 1}`;
+            timerDisplay.innerText = `Time: ${timeLeft}s`;
+            statusMsg.innerText = '';
+            checkBtn.style.display = 'inline-block';
+            checkBtn.disabled = false;
+            nextBtn.style.display = 'none';
+            retryBtn.style.display = 'none';
+            boardEl.style.opacity = '1';
+
+            // 生成網格
+            // t: type (s=static, i=input, e=empty)
+            // v: value
+            levelData.grid.forEach(cell => {
+                const div = document.createElement('div');
+                if (cell.t === 's') {
+                    div.className = 'cell static';
+                    div.innerText = cell.v;
+                } else if (cell.t === 'i') {
+                    div.className = 'cell';
+                    const input = document.createElement('input');
+                    input.className = 'cell-input';
+                    input.maxLength = 2;
+                    input.dataset.answer = cell.v;
+                    // 按 Enter 鍵自動觸發檢查
+                    input.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') checkAnswers();
+                    });
+                    div.appendChild(input);
+                    inputs.push(input);
+                } else {
+                    div.className = 'cell empty';
+                }
+                boardEl.appendChild(div);
+            });
+
+            // 啟動計時器
+            startTimer();
+        }
+
+        // --- 計時器邏輯 ---
+        function startTimer() {
+            timerDisplay.style.color = '#e8eaed'; // 正常顏色
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                timerDisplay.innerText = `Time: ${timeLeft}s`;
+
+                // 剩餘 10 秒變紅
+                if (timeLeft <= 10) timerDisplay.style.color = '#f28b82';
+
+                if (timeLeft <= 0) {
+                    gameOver();
+                }
+            }, 1000);
+        }
+
+        function stopTimer() {
+            clearInterval(timerInterval);
+        }
+
+        // --- 遊戲結束 (失敗) ---
+        function gameOver() {
+            stopTimer();
+            isGameActive = false;
+            statusMsg.innerText = "⏳ 時間到！系統崩潰。";
+            statusMsg.style.color = "#f28b82";
+            boardEl.style.opacity = '0.5';
+            checkBtn.style.display = 'none';
+            retryBtn.style.display = 'inline-block'; // 顯示重試按鈕
+            inputs.forEach(input => input.disabled = true);
+        }
+
+        // --- 檢查答案 ---
+        function checkAnswers() {
+            if (!isGameActive) return;
+
+            let allCorrect = true;
+            
+            inputs.forEach(input => {
+                const val = input.value.trim();
+                const ans = input.dataset.answer;
+                
+                input.classList.remove('correct', 'wrong');
+                
+                if (val === ans) {
+                    input.classList.add('correct');
+                } else {
+                    input.classList.add('wrong');
+                    allCorrect = false;
+                }
+            });
+
+            if (allCorrect) {
+                levelPassed();
+            } else {
+                statusMsg.innerText = "⚠️ 運算錯誤，請檢查紅框。";
+                statusMsg.style.color = "#f28b82";
+                // 答錯扣時間 (懲罰)
+                timeLeft = Math.max(0, timeLeft - 5);
+                timerDisplay.innerText = `Time: ${timeLeft}s (Penalty!)`;
+            }
+        }
+
+        // --- 關卡通過 ---
+        function levelPassed() {
+            stopTimer();
+            isGameActive = false;
+            statusMsg.innerText = "🎉 驗證成功！邏輯核心運作正常。";
+            statusMsg.style.color = "#81c995";
+            checkBtn.disabled = true;
+
+            if (currentLevelIndex < levels.length - 1) {
+                nextBtn.style.display = 'inline-block';
+                nextBtn.focus(); // 方便直接按 Enter 進下一關
+            } else {
+                statusMsg.innerText += " (全破恭喜！)";
+                levelDisplay.style.color = "#81c995";
+            }
+        }
+
+        // --- 按鈕功能 ---
+        function nextLevel() {
+            loadLevel(currentLevelIndex + 1);
+        }
+
+        function restartLevel() {
+            loadLevel(currentLevelIndex);
+        }
+
+        // 啟動遊戲
+        loadLevel(0);
+
+    </script>
+</body>
+</html>
