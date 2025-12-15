@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>小精靈（Pac-Man）遊戲</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background-color: rgb(61, 61, 61);
+      color: rgb(255, 190, 61);
+      font-family: 'Arial', sans-serif;
+      overflow: hidden;
+    }
+
+    canvas {
+      display: block;
+      margin: auto;
+      background-color: rgb(61, 61, 61);
+      border: 4px solid rgb(255, 190, 61);
+    }
+
+    #instructions {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      color: rgb(255, 190, 61);
+      z-index: 10;
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 18px;
+      background-color: rgb(255, 190, 61);
+      color: rgb(61, 61, 61);
+      border: none;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div id="instructions">
+    <h1>Pac-Man 遊戲</h1>
+    <p>使用鍵盤方向鍵 ↑ ↓ ← → 控制 Pac-Man 移動</p>
+    <p>吃掉所有點點即可獲勝！</p>
+    <p>小心敵人（鬼魂）接觸會失敗！</p>
+    <button onclick="startGame()">開始遊戲</button>
+  </div>
+
+  <canvas id="gameCanvas" width="400" height="400"></canvas>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const gridSize = 20;
+    const rows = Math.floor(canvas.height / gridSize);
+    const cols = Math.floor(canvas.width / gridSize);
+
+    let pacman = { x: 1, y: 1 };
+    let moveCounter = 0;
+    const moveDelay = 3;
+
+    let ghosts = [];
+    let dots = [];
+    let walls = [];
+    let dx = 0, dy = 0;
+    let gameRunning = false;
+
+    let ghostMoveTimer = 0;
+    const ghostMoveInterval = 200;
+    let lastTime = 0;
+
+    let lives = 3;
+
+    function createMaze() {
+      walls = [];
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          if (
+            x === 0 || y === 0 || x === cols - 1 || y === rows - 1 ||
+            (x % 3 === 0 && y % 3 === 0)
+          ) {
+            walls.push({ x, y });
+          }
+        }
+      }
+    }
+
+    function startGame() {
+      document.getElementById("instructions").style.display = "none";
+      canvas.style.display = "block";
+
+      pacman = { x: 1, y: 1 };
+      dx = dy = 0;
+      lives = 3;
+      gameRunning = true;
+
+      createMaze();
+
+      ghosts = [
+        { x: cols - 2, y: rows - 2 },
+        { x: 1, y: rows - 2 }
+      ];
+
+      dots = [];
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          if (
+            !walls.some(w => w.x === x && w.y === y) &&
+            !(x === pacman.x && y === pacman.y) &&
+            !ghosts.some(g => g.x === x && g.y === y)
+          ) {
+            dots.push({ x, y });
+          }
+        }
+      }
+
+      lastTime = performance.now();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function drawRect(x, y, color) {
+      ctx.fillStyle = color;
+      ctx.fillRect(x * gridSize + 2, y * gridSize + 2, gridSize - 4, gridSize - 4);
+    }
+
+    function drawHearts() {
+      for (let i = 0; i < lives; i++) {
+        const x = 10 + i * 25;
+        const y = 10;
+        ctx.beginPath();
+        ctx.moveTo(x + 7, y + 5);
+        ctx.bezierCurveTo(x + 7, y, x, y, x, y + 5);
+        ctx.bezierCurveTo(x, y + 10, x + 7, y + 13, x + 7, y + 18);
+        ctx.bezierCurveTo(x + 7, y + 13, x + 14, y + 10, x + 14, y + 5);
+        ctx.bezierCurveTo(x + 14, y, x + 7, y, x + 7, y + 5);
+        ctx.fillStyle = "red";
+        ctx.fill();
+      }
+    }
+
+    function moveGhosts() {
+      ghosts.forEach(ghost => {
+        const dirs = [
+          { x: 1, y: 0 },
+          { x: -1, y: 0 },
+          { x: 0, y: 1 },
+          { x: 0, y: -1 }
+        ];
+        const validDirs = dirs.filter(dir => {
+          const newX = ghost.x + dir.x;
+          const newY = ghost.y + dir.y;
+          return (
+            newX >= 0 && newX < cols &&
+            newY >= 0 && newY < rows &&
+            !walls.some(w => w.x === newX && w.y === newY)
+          );
+        });
+        if (validDirs.length > 0) {
+          const dir = Math.floor(Math.random() * validDirs.length);
+          ghost.x += validDirs[dir].x;
+          ghost.y += validDirs[dir].y;
+        }
+      });
+    }
+
+    function gameLoop(currentTime) {
+      if (!gameRunning) return;
+
+      const deltaTime = currentTime - lastTime;
+      lastTime = currentTime;
+      ghostMoveTimer += deltaTime;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      moveCounter++;
+      if (moveCounter >= moveDelay) {
+        moveCounter = 0;
+        const nextX = pacman.x + dx;
+        const nextY = pacman.y + dy;
+        if (!walls.some(w => w.x === nextX && w.y === nextY)) {
+          pacman.x = nextX;
+          pacman.y = nextY;
+        }
+      }
+
+      if (ghostMoveTimer >= ghostMoveInterval) {
+        moveGhosts();
+        ghostMoveTimer = 0;
+      }
+
+      dots = dots.filter(dot => !(dot.x === pacman.x && dot.y === pacman.y));
+
+      for (let ghost of ghosts) {
+        if (pacman.x === ghost.x && pacman.y === ghost.y) {
+          lives--;
+          if (lives <= 0) {
+            gameRunning = false;
+            alert("Game Over！你被鬼魂抓到了！");
+            location.reload();
+            return;
+          } else {
+            alert(`血量減少！你將會重生！剩餘生命：${lives}`);
+            pacman = { x: 1, y: 1 }; // 重生位置
+            dx = dy = 0;
+          }
+        }
+      }
+
+      if (dots.length === 0) {
+        gameRunning = false;
+        alert("你贏了！所有點點都吃光了！");
+        location.reload();
+        return;
+      }
+
+      walls.forEach(w => drawRect(w.x, w.y, 'rgb(65, 132, 255)'));
+      dots.forEach(dot => drawRect(dot.x, dot.y, 'rgb(250, 250, 250)'));
+      drawRect(pacman.x, pacman.y, "yellow");
+      ghosts.forEach(ghost => drawRect(ghost.x, ghost.y, "red"));
+      drawHearts();
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    document.addEventListener("keydown", e => {
+      if (!gameRunning) return;
+      if (e.key === "ArrowUp") { dx = 0; dy = -1; }
+      if (e.key === "ArrowDown") { dx = 0; dy = 1; }
+      if (e.key === "ArrowLeft") { dx = -1; dy = 0; }
+      if (e.key === "ArrowRight") { dx = 1; dy = 0; }
+    });
+  </script>
+</body>
+</html>
