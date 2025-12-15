@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>貪吃蛇 - 控制速度</title>
+  <style>
+    canvas {
+      background-color: #111;
+      display: block;
+      margin: 20px auto;
+    }
+    input {
+      display: block;
+      margin: 0 auto;
+      text-align: center;
+      font-size: 16px;
+      padding: 5px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="400" height="400"></canvas>
+  <input type="number" id="speedInput" placeholder="請輸入速度 (例如 5)" />
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const gridSize = 20;
+    let snake = [{ x: 5, y: 5 }];
+    let direction = { x: 1, y: 0 };
+    let food = { x: 10, y: 10 };
+    let lastUpdate = 0;
+
+    // 預設速度（格子/秒）
+    let speed = 5;
+
+    // 監聽速度輸入
+    document.getElementById("speedInput").addEventListener("input", (e) => {
+      const value = parseFloat(e.target.value);
+      if (!isNaN(value) && value > 0) {
+        speed = value;
+      }
+    });
+
+    function update() {
+      const head = { x: snake[0].x + direction.x, y: snake[0].y + direction.y };
+      snake.unshift(head);
+
+      if (head.x === food.x && head.y === food.y) {
+        placeFood();
+      } else {
+        snake.pop();
+      }
+
+      // 撞牆重生
+      if (
+        head.x < 0 || head.x >= canvas.width / gridSize ||
+        head.y < 0 || head.y >= canvas.height / gridSize
+      ) {
+        snake = [{ x: 5, y: 5 }];
+        direction = { x: 1, y: 0 };
+      }
+    }
+
+    function placeFood() {
+      food = {
+        x: Math.floor(Math.random() * canvas.width / gridSize),
+        y: Math.floor(Math.random() * canvas.height / gridSize)
+      };
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 畫蛇
+      ctx.fillStyle = "lime";
+      snake.forEach(part => {
+        ctx.fillRect(part.x * gridSize, part.y * gridSize, gridSize, gridSize);
+      });
+
+      // 畫食物
+      ctx.fillStyle = "red";
+      ctx.fillRect(food.x * gridSize, food.y * gridSize, gridSize, gridSize);
+    }
+
+    // 使用 requestAnimationFrame 控制節奏
+    function gameLoop(timestamp) {
+      const interval = 1000 / speed;
+      if (timestamp - lastUpdate > interval) {
+        update();
+        draw();
+        lastUpdate = timestamp;
+      }
+      requestAnimationFrame(gameLoop);
+    }
+
+    // 控制鍵盤方向
+    document.addEventListener("keydown", (e) => {
+      switch (e.key) {
+        case "ArrowUp":
+          if (direction.y === 0) direction = { x: 0, y: -1 };
+          break;
+        case "ArrowDown":
+          if (direction.y === 0) direction = { x: 0, y: 1 };
+          break;
+        case "ArrowLeft":
+          if (direction.x === 0) direction = { x: -1, y: 0 };
+          break;
+        case "ArrowRight":
+          if (direction.x === 0) direction = { x: 1, y: 0 };
+          break;
+      }
+    });
+
+    // 開始遊戲
+    requestAnimationFrame(gameLoop);
+  </script>
+</body>
+</html>
