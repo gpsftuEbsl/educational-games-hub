@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>線對稱圖形遊戲（Web 版）</title>
+  <style>
+    :root{--cv-w:900px;--cv-h:600px}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Noto Sans TC',"Helvetica Neue",Arial;display:flex;gap:12px;padding:12px}
+    canvas{background:#fff;border:1px solid #ddd}
+    .panel{width:240px}
+    .panel h3{margin:6px 0 8px;font-size:16px}
+    .row{margin:8px 0}
+    button{display:inline-block;padding:8px 10px;margin:4px 0;width:100%;cursor:pointer;border-radius:6px;border:1px solid #bbb;background:#f6f6f6}
+    label{display:block;font-size:13px;margin-bottom:4px}
+    .status{font-size:13px;color:#444;margin-top:6px;height:36px}
+    .small{font-size:12px;color:#666}
+    input[type=range]{width:100%}
+    .score{font-weight:700;font-size:20px}
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="900" height="600"></canvas>
+  <div class="panel">
+    <h3>線對稱圖形 — Web 版</h3>
+    <div class="row">
+      <label>分數</label>
+      <div class="score" id="score">0</div>
+    </div>
+    <div class="row">
+      <label>回合</label>
+      <div id="round">1</div>
+    </div>
+    <div class="row">
+      <button id="newRoundBtn">New Round</button>
+      <button id="hintBtn">Hint（短暫顯示鏡像）</button>
+      <button id="resetBtn">Reset Score</button>
+      <button id="toggleAxisBtn">Toggle Axis</button>
+    </div>
+
+    <div class="row">
+      <label>容差（像素）: <span id="tolVal">25</span></label>
+      <input id="tolRange" type="range" min="5" max="80" value="25">
+    </div>
+
+    <div class="row">
+      <label>說明</label>
+      <div class="small">在右半邊點擊放置與左半邊圖形對稱的圖形。配對在容差內視為正確，正確 +10 分。</div>
+    </div>
+
+    <div class="row">
+      <label>狀態</label>
+      <div class="status" id="status">準備就緒</div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  // Config
+  const CANVAS_W = 900, CANVAS_H = 600;
+  const AXIS_X = CANVAS_W/2;
+  const LEFT_MARGIN = 30;
+  const SHAPE_TYPES = ['circle','rect','triangle'];
+  let TOLERANCE = 25;
+  let SHAPE_COUNT_START = 3;
+
+  // Canvas setup
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+
+  // UI elements
+  const scoreEl = document.getElementById('score');
+  const roundEl = document.getElementById('round');
+  const statusEl = document.getElementById('status');
+  const tolRange = document.getElementById('tolRange');
+  const tolVal = document.getElementById('tolVal');
+  const newRoundBtn = document.getElementById('newRoundBtn');
+  const hintBtn = document.getElementById('hintBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const toggleAxisBtn = document.getElementById('toggleAxisBtn');
+
+  // Game state
+  let targets = []; // left shapes
+  let mirrors = []; // computed mirrors (right side)
+  let placed = [];  // player's placed shapes
+  let score = 0;
+  let round = 1;
+  let showAxis = true;
+  let preview = null; // preview shape at cursor
+
+  // Utilities
+  function randInt(a,b){ return Math.floor(Math.random()*(b-a+1))+a }
+  function mirrorX(x){ return AXIS_X + (AXIS_X - x) }
+  function dist(a,b){ const dx=a[0]-b[0], dy=a[1]-b[1]; return Math.hypot(dx,dy) }
+
+  // Shape constructor helpers
+  function makeCircle(cx,cy,r,color){ return {kind:'circle', params:[cx,cy,r], color, matched:false} }
+  function makeRect(x1,y1,x2,y2,color){ return {kind:'rect', params:[x1,y1,x2,y2], color, matched:false} }
+  function makeTriangle(pts,color){ return {kind:'triangle', params:pts, color, matched:false} }
+
+  function centerOf(shape){
+    if(shape.kind==='circle') return [shape.params[0], shape.params[1]];
+    if(shape.kind==='rect'){ const [x1,y1,x2,y2]=shape.params; return [(x1+x2)/2,(y1+y2)/2] }
+    if(shape.kind==='triangle'){ const pts=shape.params; return [(pts[0][0]+pts[1][0]+pts[2][0])/3,(pts[0][1]+pts[1][1]+pts[2][1])/3] }
+  }
+
+  function mirrored(shape){
+    if(shape.kind==='circle'){ const [cx,cy,r]=shape.params; return makeCircle(mirrorX(cx),cy,r,shape.color) }
+    if(shape.kind==='rect'){ const [x1,y1,x2,y2]=shape.params; return makeRect(mirrorX(x2),y1,mirrorX(x1),y2,shape.color) }
+    if(shape.kind==='triangle'){ const pts=shape.params; const newPts = pts.map(p => [mirrorX(p[0]),p[1]]); return makeTriangle(newPts,shape.color) }
+  }
+
+  // Drawing helpers
+  function clear(){ ctx.clearRect(0,0,CANVAS_W,CANVAS_H) }
+  function drawAxis(){ if(showAxis){ ctx.save(); ctx.strokeStyle='#999'; ctx.setLineDash([6,4]); ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(AXIS_X,0); ctx.lineTo(AXIS_X,CANVAS_H); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle='#555'; ctx.font='12px sans-serif'; ctx.fillText('對稱軸', AXIS_X+8,14); ctx.restore() } }
+
+  function drawShape(shape, opts={}){
+    // opts: stroke, fill, alpha, dash
+    const stroke = opts.stroke ?? '#111';
+    const fill = opts.fill ?? shape.color ?? null;
+    const alpha = opts.alpha ?? 1;
+    const dash = opts.dash ?? null;
+    ctx.save(); ctx.globalAlpha = alpha; if(dash){ ctx.setLineDash(dash) }
+    ctx.strokeStyle = stroke; ctx.lineWidth = opts.lineWidth ?? 1;
+    if(shape.kind==='circle'){
+      const [cx,cy,r] = shape.params; if(fill) { ctx.fillStyle=fill; ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill(); }
+      ctx.beginPath(); ctx.arc(shape.params[0],shape.params[1],shape.params[2],0,Math.PI*2); ctx.stroke();
+    } else if(shape.kind==='rect'){
+      const [x1,y1,x2,y2]=shape.params; if(fill){ ctx.fillStyle=fill; ctx.fillRect(x1,y1,x2-x1,y2-y1) }
+      ctx.strokeRect(x1,y1,x2-x1,y2-y1);
+    } else if(shape.kind==='triangle'){
+      const pts=shape.params; if(fill){ ctx.fillStyle=fill; ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]); ctx.lineTo(pts[1][0],pts[1][1]); ctx.lineTo(pts[2][0],pts[2][1]); ctx.closePath(); ctx.fill(); }
+      ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]); ctx.lineTo(pts[1][0],pts[1][1]); ctx.lineTo(pts[2][0],pts[2][1]); ctx.closePath(); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function redraw(){
+    clear();
+    drawAxis();
+    // left shapes
+    for(let s of targets) drawShape(s,{stroke:'#111',fill:s.color,alpha:1});
+    // placed shapes
+    for(let p of placed){ const s=p.shape; const outline = p.correct? '#0a0' : '#a00'; drawShape(s,{stroke:outline,lineWidth: p.correct?3:2,fill:s.color,alpha:1}); }
+    // preview
+    if(preview) drawShape(preview,{stroke:'#222',dash:[4,4],alpha:1,fill:preview.color?preview.color:null});
+  }
+
+  // Generate left shapes
+  function generateLeftShapes(count){ targets=[]; for(let i=0;i<count;i++){ const kind = SHAPE_TYPES[randInt(0,SHAPE_TYPES.length-1)]; const color = ['#2c7fb8','#7fcdbb','#edf8b1','#fa9fb5','#ce1256','#238b45'][randInt(0,5)];
+      if(kind==='circle'){ const r=randInt(18,40); const cx=randInt(LEFT_MARGIN+r, AXIS_X-60-r); const cy=randInt(60, CANVAS_H-60); targets.push(makeCircle(cx,cy,r,color)); }
+      else if(kind==='rect'){ const w=randInt(40,100); const h=randInt(30,80); const x1=randInt(LEFT_MARGIN, AXIS_X-60-w); const y1=randInt(40, CANVAS_H-40-h); targets.push(makeRect(x1,y1,x1+w,y1+h,color)); }
+      else if(kind==='triangle'){ const cx=randInt(LEFT_MARGIN+40, AXIS_X-80); const cy=randInt(80, CANVAS_H-80); const size=randInt(30,70); const pts=[[cx, cy-Math.floor(size/1.6)],[cx-size, cy+Math.floor(size/3)],[cx+Math.floor(size/2), cy+Math.floor(size/3)]]; targets.push(makeTriangle(pts,color)); }
+    }
+    mirrors = targets.map(t => mirrored(t));
+  }
+
+  // Game actions
+  function newRound(initial=false){ if(!initial) round++; roundEl.textContent = round; placed=[]; generateLeftShapes(SHAPE_COUNT_START + (round-1)); for(let t of targets) t.matched=false; redraw(); setStatus('新回合開始'); }
+
+  function showHint(){ // draw faint mirrors for a moment
+    // temporarily draw mirrors with alpha
+    const savePlaced = placed.slice(); const oldPreview = preview; preview = null; redraw(); for(let m of mirrors){ drawShape(m,{stroke:'#ff8c00',dash:[3,2],alpha:0.9,fill:null}); }
+    setTimeout(()=>{ preview = oldPreview; placed = savePlaced; redraw(); }, 1200);
+  }
+
+  function resetScore(){ score=0; scoreEl.textContent=score; setStatus('分數已重置'); }
+  function toggleAxis(){ showAxis = !showAxis; redraw(); setStatus('切換軸線顯示'); }
+
+  function setStatus(s){ statusEl.textContent = s }
+
+  // Input handling: place by click
+  canvas.addEventListener('click', (ev)=>{
+    const rect = canvas.getBoundingClientRect(); const x = ev.clientX - rect.left; const y = ev.clientY - rect.top;
+    if(x <= AXIS_X + 5){ setStatus('請在右半邊放置對稱圖形 (右半邊才算)。'); return; }
+    // find unmatched mirrors
+    const unmatched = mirrors.map((m,i)=>({m,i})).filter(o => !targets[o.i].matched);
+    if(unmatched.length===0){ setStatus('所有目標已完成！按 New Round 開始新回合。'); return; }
+    // find nearest mirror center
+    let nearest=null; let nd=1e9; let ni=-1;
+    for(const o of unmatched){ const c=centerOf(o.m); const d=dist(c,[x,y]); if(d<nd){ nd=d; nearest=o.m; ni=o.i } }
+    if(!nearest){ setStatus('找不到目標'); return; }
+    // build placed shape that matches nearest kind but centered at click
+    let pshape=null;
+    if(nearest.kind==='circle'){ const r=nearest.params[2]; pshape = makeCircle(x,y,r,nearest.color); }
+    else if(nearest.kind==='rect'){ const [x1,y1,x2,y2]=nearest.params; const w=x2-x1, h=y2-y1; pshape = makeRect(x - w/2, y - h/2, x + w/2, y + h/2, nearest.color); }
+    else if(nearest.kind==='triangle'){ const c=centerOf(nearest); const vecs = nearest.params.map(p => [p[0]-c[0], p[1]-c[1]]); const newPts = vecs.map(v => [x+v[0], y+v[1]]); pshape = makeTriangle(newPts, nearest.color); }
+
+    // check correctness
+    const trueCenter = centerOf(mirrors[ni]); const placedCenter = centerOf(pshape);
+    const d = dist(trueCenter, placedCenter);
+    const correct = d <= TOLERANCE;
+    if(correct){ targets[ni].matched = true; score += 10; scoreEl.textContent = score; setStatus(`正確！距離 ${Math.round(d)} px。 +10 分`); }
+    else{ setStatus(`不太準確 (距離 ${Math.round(d)} px)。容差 ${TOLERANCE} px。`); }
+    placed.push({shape:pshape, correct}); redraw();
+    if(targets.every(t=>t.matched)){ setStatus('回合完成！按 New Round。') }
+  });
+
+  // preview on mousemove
+  canvas.addEventListener('mousemove', (ev)=>{
+    const rect = canvas.getBoundingClientRect(); const x = ev.clientX - rect.left; const y = ev.clientY - rect.top;
+    if(x <= AXIS_X + 5){ preview=null; redraw(); return; }
+    const unmatched = mirrors.map((m,i)=>({m,i})).filter(o => !targets[o.i].matched);
+    if(unmatched.length===0){ preview=null; redraw(); return; }
+    // nearest mirror center to cursor
+    let nearest=null; let nd=1e9; let ni=-1;
+    for(const o of unmatched){ const c=centerOf(o.m); const d=dist(c,[x,y]); if(d<nd){ nd=d; nearest=o.m; ni=o.i } }
+    if(!nearest){ preview=null; redraw(); return; }
+    // preview shape centered at cursor with same size
+    if(nearest.kind==='circle'){ const r=nearest.params[2]; preview = makeCircle(x,y,r, nearest.color); }
+    else if(nearest.kind==='rect'){ const [x1,y1,x2,y2]=nearest.params; const w=x2-x1, h=y2-y1; preview = makeRect(x - w/2, y - h/2, x + w/2, y + h/2, nearest.color); }
+    else if(nearest.kind==='triangle'){ const c=centerOf(nearest); const vecs = nearest.params.map(p => [p[0]-c[0], p[1]-c[1]]); const newPts = vecs.map(v => [x+v[0], y+v[1]]); preview = makeTriangle(newPts, nearest.color); }
+    redraw();
+  });
+
+  // UI bindings
+  newRoundBtn.addEventListener('click', ()=>newRound(false));
+  hintBtn.addEventListener('click', ()=>showHint());
+  resetBtn.addEventListener('click', ()=>resetScore());
+  toggleAxisBtn.addEventListener('click', ()=>toggleAxis());
+  tolRange.addEventListener('input', (e)=>{ TOLERANCE = parseInt(e.target.value); tolVal.textContent = TOLERANCE });
+
+  // init
+  function init(){ score = 0; round = 1; scoreEl.textContent=score; roundEl.textContent=round; newRound(true); }
+  init();
+
+})();
+</script>
+</body>
+</html>
