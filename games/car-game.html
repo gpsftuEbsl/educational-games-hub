@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>簡易賽車遊戲</title>
+<style>
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    background: #222;
+    font-family: Arial, sans-serif;
+    user-select: none;
+    overflow: hidden;
+  }
+  #gameArea {
+    position: relative;
+    width: 400px;
+    height: 600px;
+    margin: 40px auto;
+    background: linear-gradient(to bottom, #444, #111);
+    border: 4px solid white;
+    overflow: hidden;
+  }
+  #car {
+    position: absolute;
+    width: 50px;
+    height: 100px;
+    background: red;
+    bottom: 20px;
+    left: 175px;
+    border-radius: 10px;
+    box-shadow: 0 0 15px crimson;
+    transition: left 0.1s ease;
+  }
+  .obstacle {
+    position: absolute;
+    width: 50px;
+    height: 100px;
+    background: yellow;
+    border-radius: 10px;
+    box-shadow: 0 0 10px gold;
+  }
+  #score {
+    color: white;
+    text-align: center;
+    font-size: 24px;
+    margin-top: 15px;
+    user-select: none;
+  }
+  #gameOverScreen {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.85);
+    color: white;
+    font-size: 32px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    top: 0;
+    left: 0;
+    z-index: 10;
+    display: none;
+  }
+  #gameOverScreen button {
+    margin-top: 20px;
+    padding: 10px 25px;
+    font-size: 20px;
+    cursor: pointer;
+    border: none;
+    background: crimson;
+    color: white;
+    border-radius: 5px;
+  }
+</style>
+</head>
+<body>
+<div id="gameArea">
+<div id="car"></div>
+<div id="gameOverScreen">
+<div>遊戲結束！</div>
+<button id="restartBtn">重新開始</button>
+</div>
+</div>
+<div id="score">分數: 0</div>
+ 
+<script>
+  const gameArea = document.getElementById('gameArea');
+  const car = document.getElementById('car');
+  const scoreDisplay = document.getElementById('score');
+  const gameOverScreen = document.getElementById('gameOverScreen');
+  const restartBtn = document.getElementById('restartBtn');
+ 
+  const gameWidth = 400;
+  const gameHeight = 600;
+  const carWidth = 50;
+  const carHeight = 100;
+ 
+  let carLeft = 175;
+  let obstacles = [];
+  let obstacleSpeed = 3;
+  let obstacleFrequency = 1500; // ms
+  let gameRunning = false;
+  let score = 0;
+  let lastObstacleTime = 0;
+  let lastFrameTime = 0;
+  let animationFrameId;
+ 
+  function createObstacle() {
+    const obs = document.createElement('div');
+    obs.classList.add('obstacle');
+    obs.style.width = carWidth + 'px';
+    obs.style.height = carHeight + 'px';
+    obs.style.left = Math.floor(Math.random() * (gameWidth - carWidth)) + 'px';
+    obs.style.top = '-100px';
+    gameArea.appendChild(obs);
+    obstacles.push(obs);
+  }
+ 
+  function updateObstacles(deltaTime) {
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+      const obs = obstacles[i];
+      let top = parseFloat(obs.style.top);
+      top += obstacleSpeed;
+      obs.style.top = top + 'px';
+ 
+      // 移除超出畫面障礙物
+      if (top > gameHeight) {
+        gameArea.removeChild(obs);
+        obstacles.splice(i, 1);
+        score++;
+        scoreDisplay.textContent = '分數: ' + score;
+      } else if (checkCollision(car, obs)) {
+        endGame();
+      }
+    }
+  }
+ 
+  // 使用 getBoundingClientRect 進行精確碰撞檢測
+  function checkCollision(rect1, rect2) {
+    const r1 = rect1.getBoundingClientRect();
+    const r2 = rect2.getBoundingClientRect();
+ 
+    return !(
+      r1.top > r2.bottom ||
+      r1.bottom < r2.top ||
+      r1.left > r2.right ||
+      r1.right < r2.left
+    );
+  }
+ 
+  function gameLoop(timestamp) {
+    if (!lastFrameTime) lastFrameTime = timestamp;
+    const deltaTime = timestamp - lastFrameTime;
+    lastFrameTime = timestamp;
+ 
+    // 生成障礙物
+    if (timestamp - lastObstacleTime > obstacleFrequency) {
+      createObstacle();
+      lastObstacleTime = timestamp;
+ 
+      // 隨著分數提升加快障礙物掉落速度及頻率，最大限制速度10，頻率最小500ms
+      obstacleSpeed = Math.min(10, 3 + score * 0.2);
+      obstacleFrequency = Math.max(500, 1500 - score * 20);
+    }
+ 
+    updateObstacles(deltaTime);
+ 
+    if (gameRunning) {
+      animationFrameId = requestAnimationFrame(gameLoop);
+    }
+  }
+ 
+  function startGame() {
+    gameRunning = true;
+    score = 0;
+    scoreDisplay.textContent = '分數: 0';
+    obstacleSpeed = 3;
+    obstacleFrequency = 1500;
+    carLeft = 175;
+    car.style.left = carLeft + 'px';
+ 
+    // 清除舊障礙物
+    obstacles.forEach(obs => gameArea.removeChild(obs));
+    obstacles = [];
+ 
+    gameOverScreen.style.display = 'none';
+    lastObstacleTime = 0;
+    lastFrameTime = 0;
+    animationFrameId = requestAnimationFrame(gameLoop);
+  }
+ 
+  function endGame() {
+    gameRunning = false;
+    gameOverScreen.style.display = 'flex';
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
+    }
+  }
+ 
+  document.addEventListener('keydown', (e) => {
+    if (!gameRunning) return;
+    if (e.key === 'ArrowLeft') {
+      carLeft = Math.max(0, carLeft - 25);
+      car.style.left = carLeft + 'px';
+    } else if (e.key === 'ArrowRight') {
+      carLeft = Math.min(gameWidth - carWidth, carLeft + 25);
+      car.style.left = carLeft + 'px';
+    }
+  });
+ 
+  restartBtn.addEventListener('click', () => {
+    startGame();
+  });
+ 
+  // 頁面載入時開始遊戲
+  startGame();
+</script>
+</body>
+</html>
