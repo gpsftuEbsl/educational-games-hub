@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <title>小精靈（Pac-Man）遊戲 - 完整版</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0;
+      background-color: rgb(61, 61, 61);
+      color: rgb(255, 190, 61);
+      font-family: 'Arial', sans-serif;
+      overflow: hidden;
+    }
+    canvas {
+      display: none;
+      margin: auto;
+      background-color: rgb(0, 0, 0);
+      border: 4px solid rgb(255, 190, 61);
+    }
+    #instructions {
+      position: absolute;
+      top: 20px; left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      color: rgb(255, 190, 61);
+      z-index: 10;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 18px;
+      background-color: rgb(255, 190, 61);
+      color: rgb(61, 61, 61);
+      border: none;
+      cursor: pointer;
+      margin-top: 10px;
+      border-radius: 5px;
+    }
+    button:hover {
+      background-color: rgb(255, 220, 100);
+    }
+    #gameInfo {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: rgb(255, 190, 61);
+      font-size: 14px;
+      z-index: 20;
+    }
+  </style>
+</head>
+<body>
+  <div id="instructions">
+    <h1>🎮 Pac-Man 完整版遊戲 (改進版)</h1>
+    <p>使用鍵盤方向鍵 ↑ ↓ ← → 控制 Pac-Man 移動</p>
+    <p>🟡 吃掉所有黃色點點即可獲勝！</p>
+    <p>👻 小心紅色鬼魂，碰到會失去生命！</p>
+    <p>🔷 藍色彈跳器會改變你的移動方向！</p>
+    <p><strong>✨ 新功能：可以預先按方向鍵準備轉彎！</strong></p>
+    <button id="startBtn">開始遊戲</button>
+  </div>
+
+  <div id="gameInfo" style="display: none;">
+    <div>生命值: <span id="livesDisplay">3</span></div>
+    <div>剩餘點點: <span id="dotsDisplay">0</span></div>
+    <div>分數: <span id="scoreDisplay">0</span></div>
+  </div>
+
+  <canvas id="gameCanvas" width="600" height="500"></canvas>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const gridSize = 20;
+    const rows = Math.floor(canvas.height / gridSize);
+    const cols = Math.floor(canvas.width / gridSize);
+
+    let pacman = { 
+      x: 1, 
+      y: 1, 
+      pixelX: 0, 
+      pixelY: 0,
+      targetX: 1,
+      targetY: 1,
+      moving: false
+    };
+    
+    let moveCounter = 0;
+    let moveDelay = 8;
+    let animationSpeed = 1;
+
+    let ghosts = [];
+    let dots = [];
+    let walls = [];
+    let bouncers = [];
+    let dx = 0, dy = 0; // 當前移動方向
+    let nextDx = 0, nextDy = 0; // 預儲存的下一個移動方向
+    let gameRunning = false;
+
+    let ghostMoveTimer = 0;
+    const ghostMoveInterval = 300;
+    let lastTime = 0;
+
+    let lives = 3;
+    let score = 0;
+    let totalDots = 0;
+
+    function createMaze() {
+      walls = [];
+      // 外牆
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          if (x === 0 || y === 0 || x === cols - 1 || y === rows - 1) {
+            walls.push({ x, y });
+          }
+        }
+      }
+      
+      // 內部牆壁
+      for (let y = 2; y < rows - 2; y += 4) {
+        for (let x = 2; x < cols - 2; x += 4) {
+          walls.push({ x, y });
+          walls.push({ x: x + 1, y: y });
+          walls.push({ x: x, y: y + 1 });
+        }
+      }
+      
+      // 添加一些隨機牆壁
+      for (let i = 0; i < 20; i++) {
+        let x = Math.floor(Math.random() * (cols - 4)) + 2;
+        let y = Math.floor(Math.random() * (rows - 4)) + 2;
+        if (!walls.some(w => w.x === x && w.y === y)) {
+          walls.push({ x, y });
+        }
+      }
+    }
+
+    function canMove(x, y, dirX, dirY) {
+      const newX = x + dirX;
+      const newY = y + dirY;
+      return (
+        newX >= 0 && newX < cols &&
+        newY >= 0 && newY < rows &&
+        !walls.some(w => w.x === newX && w.y === newY)
+      );
+    }
+
+    function startGame() {
+      document.getElementById("instructions").style.display = "none";
+      document.getElementById("gameInfo").style.display = "block";
+      canvas.style.display = "block";
+
+      pacman = { 
+        x: 1, 
+        y: 1, 
+        pixelX: gridSize, 
+        pixelY: gridSize,
+        targetX: 1,
+        targetY: 1,
+        moving: false
+      };
+      dx = dy = 0;
+      nextDx = nextDy = 0;
+      lives = 3;
+      score = 0;
+      moveDelay = 8;
+      gameRunning = true;
+
+      createMaze();
+
+      // 初始化鬼魂
+      ghosts = [
+        { 
+          x: cols - 2, 
+          y: rows - 2, 
+          pixelX: (cols - 2) * gridSize, 
+          pixelY: (rows - 2) * gridSize, 
+          targetX: cols - 2, 
+          targetY: rows - 2, 
+          moving: false 
+        },
+        { 
+          x: 2, 
+          y: rows - 2, 
+          pixelX: 2 * gridSize, 
+          pixelY: (rows - 2) * gridSize, 
+          targetX: 2, 
+          targetY: rows - 2, 
+          moving: false 
+        },
+        { 
+          x: cols - 2, 
+          y: 2, 
+          pixelX: (cols - 2) * gridSize, 
+          pixelY: 2 * gridSize, 
+          targetX: cols - 2, 
+          targetY: 2, 
+          moving: false 
+        }
+      ];
+
+      // 初始化彈跳器
+      bouncers = [];
+      for (let i = 0; i < 5; i++) {
+        let x = Math.floor(Math.random() * (cols - 4)) + 2;
+        let y = Math.floor(Math.random() * (rows - 4)) + 2;
+        if (!walls.some(w => w.x === x && w.y === y) && 
+            !ghosts.some(g => g.x === x && g.y === y) &&
+            !(x === pacman.x && y === pacman.y)) {
+          bouncers.push({ x, y });
+        }
+      }
+
+      // 初始化點點
+      dots = [];
+      for (let y = 1; y < rows - 1; y++) {
+        for (let x = 1; x < cols - 1; x++) {
+          if (!walls.some(w => w.x === x && w.y === y) &&
+              !(x === pacman.x && y === pacman.y) &&
+              !ghosts.some(g => g.x === x && g.y === y) &&
+              !bouncers.some(b => b.x === x && b.y === y)) {
+            dots.push({ x, y });
+          }
+        }
+      }
+      
+      totalDots = dots.length;
+      updateDisplay();
+
+      lastTime = performance.now();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function updateDisplay() {
+      document.getElementById("livesDisplay").textContent = lives;
+      document.getElementById("dotsDisplay").textContent = dots.length;
+      document.getElementById("scoreDisplay").textContent = score;
+    }
+
+    function drawRect(x, y, color) {
+      ctx.fillStyle = color;
+      ctx.fillRect(x + 1, y + 1, gridSize - 2, gridSize - 2);
+    }
+
+    function drawCircle(x, y, radius, color) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x + gridSize/2, y + gridSize/2, radius, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+
+    function drawPacman(pixelX, pixelY) {
+      const centerX = pixelX + gridSize/2;
+      const centerY = pixelY + gridSize/2;
+      const radius = gridSize/2 - 2;
+      
+      ctx.fillStyle = 'yellow';
+      ctx.beginPath();
+      
+      // 根據移動方向調整嘴巴開口
+      let startAngle = 0.25 * Math.PI;
+      let endAngle = 1.75 * Math.PI;
+      
+      if (dx > 0) {
+        startAngle = 0.25 * Math.PI;
+        endAngle = 1.75 * Math.PI;
+      } else if (dx < 0) {
+        startAngle = 1.25 * Math.PI;
+        endAngle = 0.75 * Math.PI;
+      } else if (dy > 0) {
+        startAngle = 0.75 * Math.PI;
+        endAngle = 0.25 * Math.PI;
+      } else if (dy < 0) {
+        startAngle = 1.75 * Math.PI;
+        endAngle = 1.25 * Math.PI;
+      }
+      
+      ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+      ctx.lineTo(centerX, centerY);
+      ctx.fill();
+    }
+
+    function drawGhost(ghost) {
+      const centerX = ghost.pixelX + gridSize/2;
+      const centerY = ghost.pixelY + gridSize/2;
+      const radius = gridSize/2 - 2;
+      
+      ctx.fillStyle = 'red';
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, Math.PI, 0);
+      ctx.lineTo(centerX + radius, centerY + radius);
+      ctx.lineTo(centerX + radius/2, centerY + radius - 4);
+      ctx.lineTo(centerX, centerY + radius);
+      ctx.lineTo(centerX - radius/2, centerY + radius - 4);
+      ctx.lineTo(centerX - radius, centerY + radius);
+      ctx.closePath();
+      ctx.fill();
+      
+      // 眼睛
+      ctx.fillStyle = 'white';
+      ctx.beginPath();
+      ctx.arc(centerX - radius/3, centerY - radius/3, 3, 0, 2 * Math.PI);
+      ctx.arc(centerX + radius/3, centerY - radius/3, 3, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+
+    function drawBouncer(x, y) {
+      const pixelX = x * gridSize;
+      const pixelY = y * gridSize;
+      
+      ctx.strokeStyle = 'cyan';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(pixelX + 3, pixelY + 3);
+      ctx.lineTo(pixelX + gridSize - 3, pixelY + gridSize - 3);
+      ctx.moveTo(pixelX + gridSize - 3, pixelY + 3);
+      ctx.lineTo(pixelX + 3, pixelY + gridSize - 3);
+      ctx.stroke();
+    }
+
+    function drawHearts() {
+      for (let i = 0; i < lives; i++) {
+        const x = canvas.width - 80 + i * 25;
+        const y = 15;
+        ctx.beginPath();
+        ctx.moveTo(x + 7, y + 5);
+        ctx.bezierCurveTo(x + 7, y, x, y, x, y + 5);
+        ctx.bezierCurveTo(x, y + 10, x + 7, y + 13, x + 7, y + 18);
+        ctx.bezierCurveTo(x + 7, y + 13, x + 14, y + 10, x + 14, y + 5);
+        ctx.bezierCurveTo(x + 14, y, x + 7, y, x + 7, y + 5);
+        ctx.fillStyle = "red";
+        ctx.fill();
+      }
+    }
+
+    function moveEntity(entity, targetX, targetY) {
+      if (!entity.moving) {
+        entity.targetX = targetX;
+        entity.targetY = targetY;
+        entity.moving = true;
+      }
+      
+      if (entity.moving) {
+        const targetPixelX = entity.targetX * gridSize;
+        const targetPixelY = entity.targetY * gridSize;
+        
+        const diffX = targetPixelX - entity.pixelX;
+        const diffY = targetPixelY - entity.pixelY;
+        
+        if (Math.abs(diffX) <= animationSpeed && Math.abs(diffY) <= animationSpeed) {
+          entity.pixelX = targetPixelX;
+          entity.pixelY = targetPixelY;
+          entity.x = entity.targetX;
+          entity.y = entity.targetY;
+          entity.moving = false;
+        } else {
+          if (diffX > 0) entity.pixelX += Math.min(animationSpeed, diffX);
+          else if (diffX < 0) entity.pixelX += Math.max(-animationSpeed, diffX);
+          
+          if (diffY > 0) entity.pixelY += Math.min(animationSpeed, diffY);
+          else if (diffY < 0) entity.pixelY += Math.max(-animationSpeed, diffY);
+        }
+      }
+    }
+
+    function moveGhosts() {
+      ghosts.forEach(ghost => {
+        if (!ghost.moving) {
+          const dirs = [
+            { x: 1, y: 0 },
+            { x: -1, y: 0 },
+            { x: 0, y: 1 },
+            { x: 0, y: -1 }
+          ];
+          
+          const validDirs = dirs.filter(dir => {
+            const newX = ghost.x + dir.x;
+            const newY = ghost.y + dir.y;
+            return (
+              newX >= 0 && newX < cols &&
+              newY >= 0 && newY < rows &&
+              !walls.some(w => w.x === newX && w.y === newY)
+            );
+          });
+          
+          if (validDirs.length > 0) {
+            const dir = validDirs[Math.floor(Math.random() * validDirs.length)];
+            const newX = ghost.x + dir.x;
+            const newY = ghost.y + dir.y;
+            moveEntity(ghost, newX, newY);
+          }
+        } else {
+          moveEntity(ghost, ghost.targetX, ghost.targetY);
+        }
+      });
+    }
+
+    function checkBouncerCollision() {
+      bouncers.forEach(bouncer => {
+        if (pacman.x === bouncer.x && pacman.y === bouncer.y) {
+          const directions = [
+            { dx: 1, dy: 0 },
+            { dx: -1, dy: 0 },
+            { dx: 0, dy: 1 },
+            { dx: 0, dy: -1 }
+          ];
+          
+          const newDir = directions[Math.floor(Math.random() * directions.length)];
+          dx = newDir.dx;
+          dy = newDir.dy;
+          nextDx = nextDy = 0; // 清除預儲存方向
+          
+          score += 50;
+        }
+      });
+    }
+
+    function gameLoop(timestamp) {
+      if (!gameRunning) return;
+
+      const delta = timestamp - lastTime;
+      lastTime = timestamp;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 繪製牆壁
+      walls.forEach(w => drawRect(w.x * gridSize, w.y * gridSize, "#4444ff"));
+
+      // 繪製點點
+      dots.forEach(dot => drawCircle(dot.x * gridSize, dot.y * gridSize, 3, "#ffd700"));
+
+      // 繪製彈跳器
+      bouncers.forEach(b => drawBouncer(b.x, b.y));
+
+      // 繪製鬼魂
+      ghosts.forEach(ghost => {
+        moveEntity(ghost, ghost.targetX, ghost.targetY);
+        drawGhost(ghost);
+      });
+
+      // Pac-Man 移動邏輯 (改進版)
+      moveCounter++;
+      if (moveCounter >= moveDelay && !pacman.moving) {
+        moveCounter = 0;
+        
+        // 檢查是否可以轉向預儲存的方向
+        if (nextDx !== 0 || nextDy !== 0) {
+          if (canMove(pacman.x, pacman.y, nextDx, nextDy)) {
+            dx = nextDx;
+            dy = nextDy;
+            nextDx = nextDy = 0; // 清除預儲存方向
+          }
+        }
+        
+        // 嘗試移動
+        if ((dx !== 0 || dy !== 0) && canMove(pacman.x, pacman.y, dx, dy)) {
+          const newX = pacman.x + dx;
+          const newY = pacman.y + dy;
+          moveEntity(pacman, newX, newY);
+        } else {
+          // 如果當前方向無法移動，停止移動
+          dx = dy = 0;
+        }
+      } else if (pacman.moving) {
+        moveEntity(pacman, pacman.targetX, pacman.targetY);
+      }
+      
+      drawPacman(pacman.pixelX, pacman.pixelY);
+
+      // 顯示生命值
+      drawHearts();
+
+      // 吃掉點點
+      const initialDotsLength = dots.length;
+      dots = dots.filter(dot => !(dot.x === pacman.x && dot.y === pacman.y));
+      if (dots.length < initialDotsLength) {
+        score += 10;
+      }
+
+      // 檢查彈跳器碰撞
+      checkBouncerCollision();
+
+      // 判定勝利
+      if (dots.length === 0) {
+        gameRunning = false;
+        alert("恭喜你獲勝了！最終分數: " + score);
+        location.reload();
+        return;
+      }
+
+      // 鬼魂移動
+      ghostMoveTimer += delta;
+      if (ghostMoveTimer >= ghostMoveInterval) {
+        moveGhosts();
+        ghostMoveTimer = 0;
+      }
+
+      // 判定碰到鬼魂
+      for (const ghost of ghosts) {
+        if (ghost.x === pacman.x && ghost.y === pacman.y) {
+          lives--;
+          if (lives <= 0) {
+            gameRunning = false;
+            alert("遊戲結束！最終分數: " + score);
+            location.reload();
+            return;
+          } else {
+            pacman.x = 1;
+            pacman.y = 1;
+            pacman.pixelX = gridSize;
+            pacman.pixelY = gridSize;
+            pacman.targetX = 1;
+            pacman.targetY = 1;
+            pacman.moving = false;
+            dx = dy = 0;
+            nextDx = nextDy = 0; // 清除預儲存方向
+          }
+        }
+      }
+
+      updateDisplay();
+      requestAnimationFrame(gameLoop);
+    }
+
+    window.addEventListener("keydown", e => {
+      if (!gameRunning) return;
+      
+      switch (e.key) {
+        case "ArrowUp": 
+          // 如果當前沒在移動或可以立即轉向，則立即轉向
+          if (!pacman.moving && canMove(pacman.x, pacman.y, 0, -1)) {
+            dx = 0; dy = -1;
+            nextDx = nextDy = 0;
+          } else {
+            // 否則暫存這個方向
+            nextDx = 0; nextDy = -1;
+          }
+          break;
+        case "ArrowDown": 
+          if (!pacman.moving && canMove(pacman.x, pacman.y, 0, 1)) {
+            dx = 0; dy = 1;
+            nextDx = nextDy = 0;
+          } else {
+            nextDx = 0; nextDy = 1;
+          }
+          break;
+        case "ArrowLeft": 
+          if (!pacman.moving && canMove(pacman.x, pacman.y, -1, 0)) {
+            dx = -1; dy = 0;
+            nextDx = nextDy = 0;
+          } else {
+            nextDx = -1; nextDy = 0;
+          }
+          break;
+        case "ArrowRight": 
+          if (!pacman.moving && canMove(pacman.x, pacman.y, 1, 0)) {
+            dx = 1; dy = 0;
+            nextDx = nextDy = 0;
+          } else {
+            nextDx = 1; nextDy = 0;
+          }
+          break;
+      }
+      e.preventDefault();
+    });
+
+    document.getElementById("startBtn").addEventListener("click", startGame);
+  </script>
+</body>
+</html>
