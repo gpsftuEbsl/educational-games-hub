@@ -8,9 +8,8 @@
 
 您可以直接透過以下連結訪問主選單並開始體驗所有遊戲：
 
-**[點擊這裡進入遊戲中心主選單] (https://your-github-username.github.io/your-repository-name/)**
+**[點擊這裡進入遊戲中心主選單] (https://gpsftuebsl.github.io/educational-games-hub/)**
 
-**(⚠️ 部署後，請將上方連結替換為您實際的 GitHub Pages URL)**
 
 ---
 
