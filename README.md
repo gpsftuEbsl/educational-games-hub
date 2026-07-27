@@ -1,15 +1,14 @@
-# 🎮 Educational Games Hub (教育性 HTML 遊戲中心)
-
-這個儲存庫集合了 gpsftuEbsl 的多個小型 HTML 遊戲和互動專案，旨在提供一個國小高年級數學與國中程式設計的學習與娛樂平台。所有遊戲皆透過 GitHub Pages 部署和託管。
-
----
-
 ## 🚀 專案連結
 
 您可以直接透過以下連結訪問主選單並開始體驗所有遊戲：
 
 **[點擊這裡進入遊戲中心主選單] (https://gpsftuebsl.github.io/educational-games-hub/)**
 
+---
+
+# 🎮 Educational Games Hub (教育性 HTML 遊戲中心)
+
+這個儲存庫集合了 gpsftuEbsl 的多個小型 HTML 遊戲和互動專案，旨在提供一個國小高年級數學與國中程式設計的學習與娛樂平台。所有遊戲皆透過 GitHub Pages 部署和託管。
 
 ---
 
